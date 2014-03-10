@@ -1,8 +1,19 @@
 git-status-report
 =================
 
-Generates a status report for what you (or a coworker) worked on for the past n days from 
-all of the branches from a pre-configured list of repos (see below) or the current repo.
+# WARNING:
+This tool depends on the [Grit Ruby Gem](https://github.com/mojombo/grit).
+Unfortunately that has been abandonded in favor of [libgit2/rugged](https://github.com/libgit2/rugged), and getting Grit to run these days seems... problematic at best. 
+
+So, I'd recommend you not download this unless you feel like taking 
+the time to rework it to use libgit2/rugged. Shouldn't be a big deal but...
+
+--------
+
+Git status-report generates a status report for what you (or a coworker) worked 
+on for the past n days from all of the branches from a pre-configured list of 
+repos (see below) or the current repo. You can see example output at the bottom 
+of this page
 
 Useful for those once a week emails your boss is always asking for.
 
