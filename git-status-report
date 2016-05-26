@@ -3,8 +3,7 @@ require 'Date'
 require 'Time'
 require 'rubygems'
 require 'optparse'
-require 'grit'
-include Grit
+require 'rugged'
 
 
 #BEGIN Subroutines
@@ -72,7 +71,7 @@ def process_options()
 		config_days = `git config --get status-report.days`.chomp
 		options[:days] = config_days != '' ? config_days.to_i : 6
 	end
-	options[:since] = Time.parse((Date.today() - options[:days]).to_s)
+	options[:since] = Time.parse((Date.today() - options[:days]).to_s).to_i
 	return options
 end
 
@@ -93,7 +92,7 @@ def is_dir_git_repo(path, check_excludes = true)
 end
 
 
-# written because Grit doesn't support
+# written because rugged doesn't support
 # git config --get-all
 def process_raw_git_configs(raw_output)
 	if (raw_output and raw_output != '')
@@ -192,12 +191,12 @@ def find_git_repos
 	return @git_repos
 end
 
-# initializes a grit Repo for each include path
-# and sticks them in the git_repos hash under the grit key
-def initialize_grit_repos (git_repos)
-	git_repos['grit'] = []
+# initializes a rugged Repo for each include path
+# and sticks them in the git_repos hash under the rugged key
+def initialize_rugged_repos (git_repos)
+	git_repos['rugged'] = []
 	git_repos['includes'].each do | path |
-		git_repos['grit'].push(Repo.new(path))
+		git_repos['rugged'].push(Rugged::Repository.new(path))
 	end
 end
 
@@ -212,6 +211,18 @@ def get_files_in_commit(commit)
 	return files.keys
 end
 
+def get_commits_since(repo, branch_name, epoch_since_date)
+	response = []
+	walker = Rugged::Walker.new(repo)
+	walker.sorting(Rugged::SORT_REVERSE)
+	walker.push(branch_name)
+	walker.each do |commit| 
+		break if commit.epoch_time < epoch_sice_time
+		response.push commit
+	end
+	return response.reverse
+end
+
 
 #END Subroutines
 
@@ -221,7 +232,7 @@ end
 @git_repos = find_git_repos() # will exit if it can't find any repos
 							 # has includes and excludes keys, but includes only includes items 
 							 # that weren't excluded by the exclude rules.
-initialize_grit_repos(@git_repos) #ads grit Repo objects to the @git_repos hash under 'grit' key
+initialize_rugged_repos(@git_repos) #ads rugged Repo objects to the @git_repos hash under 'rugged' key
 #confirm_saved_changes(@git_repos) # will exit if there are any unsaved changes
 
 
@@ -241,28 +252,26 @@ unsaved_changes = false
 
 @multiple_people = (@options[:all] or @options[:email].length() > 1) ? true : false
 longest_name = @multiple_people ? 0 : nil
-@git_repos['grit'].each do |repo|
+@git_repos['rugged'].each do |repo|
 	# find_git_repos will automatically filter anything out of the includes list that 
 	# needs to be excluded.
 	
 	# we want all the commits to all branches since option[:days] days ago
 	
 	
-	branches = repo.heads() #an array of Grit::Head objects
-	
+
+	branches = repo.branches() #Returns an BranchCollection containing Rugged::Branch objects
 	branches.each do | branch |
 		if (@options[:branches] and not @options[:branches].include? branch.name)
 			next
 		end
-		branch_commits = repo.commits_since(branch.name, @options[:since] ) #chronological ordering of commits
+		branch_commits = get_commits_since(repo, branch.name, @options[:since]) #chronological ordering of commits
 		branch_commits.each do | commit | 
 			#puts commit.to_hash().inspect()
-			if ( (@options[:all] or @options[:email].include?(commit.author.email)) and commit.date() >= @options[:since] )
-				# there's currently a bug in grit where commits outside of the specified date range will be returned.
-				# the date check above compensates for that until the patch has been pulled into grit and distributed
-				# widely. - masukomi 7 / 31 / 10
+			# Return the signature for the author of this commit. The signature is returned as a Hash containing :name, :email of the author and :time of the change.
+			if (@options[:all]  or @options[:email].include?(commit.author[:email]))
 				if (@multiple_people)
-					longest_name = commit.author.name.length if commit.author.name.length > longest_name
+					longest_name = commit.author[:name].length if commit.author[:name].length > longest_name
 				end
 				commit_hash = commit.to_hash()
 				response_hash = {
@@ -271,8 +280,8 @@ longest_name = @multiple_people ? 0 : nil
 					'commit'	=> commit,
 					'subject'	=> commit.message.split(/\n/)[0]
 				}
-				#commit.date() is a Time object 2010-07-26T22:46:41-04:00
-				date_string = sprintf "%02d-%02d-%02d" % [commit.date().year, commit.date().month, commit.date().day]
+				commit_date = Time.at(commit.epoch_time) 
+				date_string = sprintf "%02d-%02d-%02d" % [commit_date.year, commit_date.month, commit_date.day]
 
 				if (not responses_by_day[date_string])
 					responses_by_day[date_string] = {}
@@ -296,7 +305,7 @@ longest_name = @multiple_people ? 0 : nil
 					
 					# Also, betting on the unlikelyhood of two people commiting at the same second
 					# eventually this will need to be addressed
-					responses_by_day[date_string][commit.date().to_i] = response_hash
+					responses_by_day[date_string][commit.epoch_time] = response_hash
 					if ( @multiple_people )
 						author_subjects_by_day[date_string][commit.author.email][response_hash['subject']] = true
 					else
