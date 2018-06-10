@@ -1,10 +1,9 @@
-#!/usr/bin/ruby -W0
+#!/Users/masukomi/.rvm/rubies/ruby-2.4.1/bin/ruby -W0
 require 'Date'
 require 'Time'
 require 'rubygems'
 require 'optparse'
-require 'grit'
-include Grit
+require 'rugged'
 
 
 #BEGIN Subroutines
@@ -12,7 +11,7 @@ def process_options()
 	options = {}
 	optparse = OptionParser.new do | opts |
 		opts.banner = "Usage: git status-report [-e <email>][-d <days>]\nGenerates a status report for what you worked on for the past n days."
-		opts.on("-a", "--all", "Displays output for all contributers sorted by person") do 
+		opts.on("-a", "--all", "Displays output for all contributers sorted by person") do
 			options[:all] = true
 		end
 		opts.on('-b', '--branches <branch name>', "Limit results to work found in the specified branch(es). \n\t\t\t\t\tMultiple branches can be comma separated") do | branches |
@@ -30,11 +29,11 @@ def process_options()
 		opts.on('-f', '--files', "Display a list of files involved in the commit(s)") do
 			options[:files] = true
 		end
-		opts.on("-h", "--help", "Displays this message") do 
+		opts.on("-h", "--help", "Displays this message") do
 			puts optparse
 			exit 0
 		end
-		opts.on("-r", "--reverse", "Displays output in reverse chronological order") do 
+		opts.on("-r", "--reverse", "Displays output in reverse chronological order") do
 			options[:reverse] = true
 		end
 		opts.on("-s", "--simple", "Simpler output. Doesn't include the dates") do
@@ -142,7 +141,7 @@ def find_git_repos
 			exit 1
 		end
 	end
-	
+
 	if (@git_repos['includes'].length == 0)
 		#nothing specified in the config
 		#maybe the current dir is a git repo
@@ -162,7 +161,7 @@ def find_git_repos
 			#these will look like   .//workspace/htop-osx/.git
 			# and we'll need to merge them with the current dir so that they match up with possible configured exclusions
 			if (raw_repo_paths.length > 0)
-				raw_repo_paths.each do | path | 
+				raw_repo_paths.each do | path |
 					path.sub!(/^\.\//, '')
 					path.sub!(/\.git\/?/, '')
 					absolute_path = pwd + path
@@ -183,7 +182,7 @@ def find_git_repos
 			end
 		end
 	end
-	
+
 	if (@git_repos['includes'].length == 0)
 		puts "Unable to find any git repos to run a report on."
 		puts "Please configure the repos you want to run a report on or run this in a git repo."
@@ -195,16 +194,16 @@ end
 # initializes a grit Repo for each include path
 # and sticks them in the git_repos hash under the grit key
 def initialize_grit_repos (git_repos)
-	git_repos['grit'] = []
+	git_repos['rugged'] = []
 	git_repos['includes'].each do | path |
-		git_repos['grit'].push(Repo.new(path))
+		git_repos['rugged'].push(Rugged::Repository.new(path))
 	end
 end
 
 # gets a list of files affected by a commit
 def get_files_in_commit(commit)
 	files = {}
-	commit.diffs.each do | diff | 
+	commit.diffs.each do | diff |
 		files[diff.a_path] = nil unless files.has_key? diff.a_path
 		files[diff.b_path] = nil unless files.has_key? diff.b_path
 		# what about diff.deleted_file and diff.new_file?
@@ -219,9 +218,9 @@ end
 
 @options = process_options()
 @git_repos = find_git_repos() # will exit if it can't find any repos
-							 # has includes and excludes keys, but includes only includes items 
+							 # has includes and excludes keys, but includes only includes items
 							 # that weren't excluded by the exclude rules.
-initialize_grit_repos(@git_repos) #ads grit Repo objects to the @git_repos hash under 'grit' key
+initialize_grit_repos(@git_repos) #ads grit Repo objects to the @git_repos hash under 'rugged' key
 #confirm_saved_changes(@git_repos) # will exit if there are any unsaved changes
 
 
@@ -241,38 +240,41 @@ unsaved_changes = false
 
 @multiple_people = (@options[:all] or @options[:email].length() > 1) ? true : false
 longest_name = @multiple_people ? 0 : nil
-@git_repos['grit'].each do |repo|
-	# find_git_repos will automatically filter anything out of the includes list that 
+@git_repos['rugged'].each do |repo|
+	# find_git_repos will automatically filter anything out of the includes list that
 	# needs to be excluded.
-	
+
 	# we want all the commits to all branches since option[:days] days ago
-	
-	
-	branches = repo.heads() #an array of Grit::Head objects
-	
-	branches.each do | branch |
-		if (@options[:branches] and not @options[:branches].include? branch.name)
+
+	walker = Rugged::Walker.new(repo)
+	repo.branches.each_name(:local).sort.each do | branch |
+	# => ["master"]
+	# repo.branches.each_name().sort.each do | branch |
+	# => ["master", "origin/HEAD", "origin/master", "origin/packed"]
+		if (@options[:branches] and not @options[:branches].include? branch)
 			next
 		end
-		branch_commits = repo.commits_since(branch.name, @options[:since] ) #chronological ordering of commits
-		branch_commits.each do | commit | 
-			#puts commit.to_hash().inspect()
-			if ( (@options[:all] or @options[:email].include?(commit.author.email)) and commit.date() >= @options[:since] )
-				# there's currently a bug in grit where commits outside of the specified date range will be returned.
-				# the date check above compensates for that until the patch has been pulled into grit and distributed
-				# widely. - masukomi 7 / 31 / 10
+		commits_since_date = @options[:since].strftime "%Y-%m-%d"
+		commit_hash = `git log -n1 #{branch} --since="#{commits_since_date}" --pretty=%H`.strip
+		# walker.sorting(Rugged::SORT_REVERSE)
+		walker.push(commit_hash)
+
+
+		walker.each do |commit|
+			#puts commit.oid.inspect()
+			if ( (@options[:all] or \
+					@options[:email].include?(commit.author[:email])) )
 				if (@multiple_people)
-					longest_name = commit.author.name.length if commit.author.name.length > longest_name
+					longest_name = commit.author[:name].length if commit.author[:name].length > longest_name
 				end
-				commit_hash = commit.to_hash()
+				commit_hash = commit.oid
 				response_hash = {
 					'branch'	=> branch,
 					'repo'		=> repo,
 					'commit'	=> commit,
 					'subject'	=> commit.message.split(/\n/)[0]
 				}
-				#commit.date() is a Time object 2010-07-26T22:46:41-04:00
-				date_string = sprintf "%02d-%02d-%02d" % [commit.date().year, commit.date().month, commit.date().day]
+				date_string = sprintf "%02d-%02d-%02d" % [commit.time.year, commit.time.month, commit.time.day]
 
 				if (not responses_by_day[date_string])
 					responses_by_day[date_string] = {}
@@ -280,31 +282,34 @@ longest_name = @multiple_people ? 0 : nil
 					response_days.push(date_string)
 				end
 				if (@multiple_people)
-					if (not author_subjects_by_day[date_string][commit.author.email])
-						author_subjects_by_day[date_string][commit.author.email] = {}
+					if (not
+						author_subjects_by_day[date_string][commit.author[:email]])
+						author_subjects_by_day[date_string][commit.author[:email]] = {}
 					end
 				end
-				
-				if  ((@multiple_people and not author_subjects_by_day[date_string][commit.author.email][response_hash['subject']]) \
+
+				if  ((@multiple_people and not
+					  author_subjects_by_day[date_string][commit.author[:email]][response_hash['subject']]) \
 					or \
 					(not @multiple_people and not author_subjects_by_day[date_string][response_hash['subject']]))
 
-					# using the epoch time of the commit is too unique because it's not 
-					# uncommon to commit on one branch, merge into another branch, and then ammend 
-					# the commit on the merged branch, which gives you the same "work" (as far as the report 
+					# using the epoch time of the commit is too unique because it's not
+					# uncommon to commit on one branch, merge into another branch, and then ammend
+					# the commit on the merged branch, which gives you the same "work" (as far as the report
 					# is concerned) but with 2 different commit times
-					
+
 					# Also, betting on the unlikelyhood of two people commiting at the same second
 					# eventually this will need to be addressed
-					responses_by_day[date_string][commit.date().to_i] = response_hash
+					responses_by_day[date_string][commit.time.to_i] = response_hash
 					if ( @multiple_people )
-						author_subjects_by_day[date_string][commit.author.email][response_hash['subject']] = true
+						author_subjects_by_day[date_string][commit.author[:email]][response_hash['subject']] = true
 					else
 						author_subjects_by_day[date_string][response_hash['subject']] = true
 					end
 				end
 			end
 		end
+		walker.reset
 	end
 end # end iterating over repos
 
@@ -319,12 +324,12 @@ if (response_days.length > 0)
 		response_days.reverse!
 	end
 	response_days.each do | date |
-		
+
 		puts date if not @options[:simple]
 		count = nil
 		if (not @options[:reverse])
 			count = (responses_by_day[date].length > 1) ? 1 : ''
-		else 
+		else
 			count = (responses_by_day[date].length > 1) ? responses_by_day[date].length : ''
 		end
 		epoch_commit_times = responses_by_day[date].keys.sort
@@ -334,33 +339,33 @@ if (response_days.length > 0)
 		epoch_commit_times.each do |epoch|
 			commit_info =responses_by_day[date][epoch]
 			commit = commit_info['commit']
-			commit_hash = commit.to_hash()
+			commit_hash = commit.oid
 			if (not @options[:verbose])
 				if (not (@options[:all] or @multiple_people))
 					puts "\t* #{commit_info['subject']}"
 				else
-					puts "\t* [ %-#{longest_name}s ] %s" % [commit.author.name , commit_info['subject']]
+					puts "\t* [ %-#{longest_name}s ] %s" % [commit.author[:name] , commit_info['subject']]
 				end
 			else
 				if (count != '') # a multi-commit day
 					if (not (@options[:all] or @multiple_people))
 						puts "\tcommit #{count}---------- "
 					else
-						puts "\tcommit %d -- [ %-#{longest_name}s ] ---------- " % [count, commit.author.name]
+						puts "\tcommit %d -- [ %-#{longest_name}s ] ---------- " % [count, commit.author[:name]]
 					end
 					commit_hash['message'].split(/\n/).each do | message_line |
 						puts "\t\t#{message_line}"
 					end
-					puts "\t\t[Found in branch \"#{commit_info['branch'].name}\" of repo at #{commit_info['repo'].path}]" 
+					puts "\t\t[Found in branch \"#{commit_info['branch'].name}\" of repo at #{commit_info['repo'].path}]"
 					count = @options[:reverse] ? count -1 : count +1
 				else # just one commit this day
 					if (@options[:all] or @multiple_people)
-						puts "\t[ %-#{longest_name}s ] ---------- " % [commit.author.name]
+						puts "\t[ %-#{longest_name}s ] ---------- " % [commit.author[:name]]
 					end
 					commit_hash['message'].split(/\n/).each do | message_line |
 						puts "\t#{message_line}"
 					end
-					puts "\t[Found in branch \"#{commit_info['branch'].name}\" of repo at #{commit_info['repo'].path}]" 
+					puts "\t[Found in branch \"#{commit_info['branch'].name}\" of repo at #{commit_info['repo'].path}]"
 				end
 			end
 			if @options[:files]

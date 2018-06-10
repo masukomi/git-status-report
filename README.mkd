@@ -1,33 +1,24 @@
 git-status-report
 =================
 
-# WARNING:
-This tool depends on the [Grit Ruby Gem](https://github.com/mojombo/grit).
-Unfortunately that has been abandonded in favor of [libgit2/rugged](https://github.com/libgit2/rugged), and getting Grit to run these days seems... problematic at best. 
-
-So, I'd recommend you not download this unless you feel like taking 
-the time to rework it to use libgit2/rugged. Shouldn't be a big deal but...
-
---------
-
-Git status-report generates a status report for what you (or a coworker) worked 
-on for the past n days from all of the branches from a pre-configured list of 
-repos (see below) or the current repo. You can see example output at the bottom 
+Git status-report generates a status report for what you (or a coworker) worked
+on for the past n days from all of the branches from a pre-configured list of
+repos (see below) or the current repo. You can see example output at the bottom
 of this page
 
 Useful for those once a week emails your boss is always asking for.
 
-*Please note. git-status-report requires the Grit gem to function (gem install grit).*
+*Please note. git-status-report requires the [Rugged](https://github.com/libgit2/rugged) gem to function (`gem install rugged`).*
 
 	Usage: git status-report [-e <email>][-d <days>]
 	Generates a status report for what you worked on for the past n days.
 	    -a, --all                        Displays output for all contributers sorted by person
-	    -b, --branches <branch name>     Limit results to work found in the specified branch(es). 
+	    -b, --branches <branch name>     Limit results to work found in the specified branch(es).
 	                                         Multiple branches can be comma separated
 	    -c, --current                    Generates status report for the current repo only
 	    -d, --days <num days>            The number of days to generate the report for. Defaults to past 6 days (one week)
-	    -e, --email <email address>      The email address of the committer to generate a report for. 
-	                                         Defaults to your "git config user.email" address. 
+	    -e, --email <email address>      The email address of the committer to generate a report for.
+	                                         Defaults to your "git config user.email" address.
 	                                         Multiple email addresses can be comma separated.
 	    -f, --files                      Display a list of files involved in the commit(s)
 	    -h, --help                       Displays this message
@@ -37,13 +28,13 @@ Useful for those once a week emails your boss is always asking for.
 
 
 
-If you wish to pre-configure a list of repos to build you status report from 
-(and you should) you can do so by adding them to git's global config 
+If you wish to pre-configure a list of repos to build you status report from
+(and you should) you can do so by adding them to git's global config
 as shown below. You can add as many include or exclude paths as you'd like.
 of *absolute* paths to your local repos (the folder containing the .git folder).
 Verbose mode will let you know which branch of which repo each item came from.
 
-If you don't specify any "includes" it will attempt to find repos in the current directory or 
+If you don't specify any "includes" it will attempt to find repos in the current directory or
 directories below it.
 
 	git config --global --add status-report.include /Users/masukomi/workspace/git_accessories
@@ -53,7 +44,7 @@ directories below it.
 Please note that it does not currently support wildcard exclusions.
 
 If you don't want to use the default e-mail in "git config user.email"
-or you want to specify more than one, but not all, in your default status 
+or you want to specify more than one, but not all, in your default status
 report you can set those in the status-report section of your git config
 as well.
 
@@ -64,11 +55,11 @@ as well.
 
 Configuration Options
 ---------------------
-In addition to configuring includes and excludes you can pre-configure the number of 
-days you want the status report to include in its run without having to manually 
-specify it on the command line. By default it will include 6 days which is perfect 
+In addition to configuring includes and excludes you can pre-configure the number of
+days you want the status report to include in its run without having to manually
+specify it on the command line. By default it will include 6 days which is perfect
 if you run it on Fridays and want the previous week's work. But if you
-run it on a Monday you'll probably want it to default to seven. 
+run it on a Monday you'll probably want it to default to seven.
 
 	git config --global --replace-all status-report.days 7
 
@@ -88,7 +79,7 @@ Finding repos is really rather slow. It's always a better idea to pre-configure 
 
 Planned Features
 -----------------
-Please see the wiki page on github. If you're interested in helping please fork 
+Please see the wiki page on github. If you're interested in helping please fork
 this repo (preferably on Github) and request a pull when you've got something ready to add.
 
 ### Example output ###
@@ -128,14 +119,14 @@ this repo (preferably on Github) and request a pull when you've got something re
 			[Found in branch "development" of repo at /Users/masukomi/workspace/git_accessories]
 		commit 2----------
 			Updated README to include git-status-report info
-			
+
 			* added markdown formatting
 			* renamed file README -> README.mkd
 			[Found in branch "development" of repo at /Users/masukomi/workspace/git_accessories]
 	2010-07-23
 		commit 1----------
 			git-status-report now generates report from all branches
-			
+
 			* output has been sorted chronologically (instead of reverse cron)
 				this is because it makes a more sensible default for
 				something you're giving to a boss. AND because the next
@@ -144,16 +135,16 @@ this repo (preferably on Github) and request a pull when you've got something re
 			[Found in branch "development" of repo at /Users/masukomi/workspace/git_accessories]
 		commit 2----------
 			git-status-report now supports a --reverse option
-			
+
 			* produces output in reverse chronological order
 			[Found in branch "development" of repo at /Users/masukomi/workspace/git_accessories]
 		commit 3----------
 			Updated README.mkdn to include info on --reverse
-			
+
 			* also did minor formatting changes
 			[Found in branch "development" of repo at /Users/masukomi/workspace/git_accessories]
 
 #### "all" output ####
 
-Output for the -a / --all option is essentially the same as the output above only with the addition 
+Output for the -a / --all option is essentially the same as the output above only with the addition
 of a note as to which commit came from which contributer.
